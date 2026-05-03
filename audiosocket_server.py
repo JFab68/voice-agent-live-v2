@@ -45,18 +45,41 @@ END_SILENCE_MS = int(os.getenv("END_SILENCE_MS", "1200"))
 BARGE_IN_MS = int(os.getenv("BARGE_IN_MS", "180"))
 MAX_UTTERANCE_MS = int(os.getenv("MAX_UTTERANCE_MS", "9000"))
 
-SYSTEM_PROMPT = os.getenv(
-    "VOICE_AGENT_PROMPT",
-    """You are a professional business phone agent answering calls.
+# --- Dynamic prompt loading ---
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROMPT_FILE = os.getenv("VOICE_AGENT_PROMPT_FILE", os.path.join(_SCRIPT_DIR, "prompt.md"))
+_KNOWLEDGE_FILE = os.getenv("VOICE_AGENT_KNOWLEDGE_FILE", os.path.join(_SCRIPT_DIR, "knowledge.md"))
+_HISTORY_WINDOW = int(os.getenv("VOICE_AGENT_HISTORY_WINDOW", "24"))
 
-Rules:
-- Keep responses short and highly intelligible over phone audio.
-- Speak plainly with common words and crisp phrasing.
-- Prefer 1-2 short sentences unless the caller explicitly asks for more.
-- If interrupted, stop and address the new request.
-- Never invent policies, pricing, hours, or commitments.
-- If uncertain, say so briefly and offer the next step.""",
-)
+def _load_file(path: str) -> str:
+    """Load a text file, returning empty string if missing."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        log(f"warning: file not found, skipping: {path}")
+        return ""
+
+def _build_system_prompt() -> str:
+    """Build the system prompt from prompt file + knowledge file + env override."""
+    # Env override takes priority
+    env_prompt = os.getenv("VOICE_AGENT_PROMPT")
+    if env_prompt:
+        return env_prompt
+    # Otherwise compose from files
+    prompt = _load_file(_PROMPT_FILE)
+    knowledge = _load_file(_KNOWLEDGE_FILE)
+    parts = []
+    if prompt:
+        parts.append(prompt)
+    if knowledge:
+        parts.append("\n\n## Organization Knowledge\n\n" + knowledge)
+    if not parts:
+        parts.append("You are a helpful phone reception agent. Keep your answers short and plain.")
+    return "\n".join(parts)
+
+SYSTEM_PROMPT = _build_system_prompt()
+# Will log after log() is defined
 
 _shutdown = False
 _tts_lock = threading.Lock()
@@ -65,6 +88,8 @@ _tts = None
 
 def log(msg: str) -> None:
     print(f"{LOG_PREFIX} {time.strftime('%H:%M:%S')} {msg}", flush=True)
+
+log(f"system_prompt loaded: {len(SYSTEM_PROMPT)} chars, prompt_file={_PROMPT_FILE}, knowledge_file={_KNOWLEDGE_FILE}, history_window={_HISTORY_WINDOW}")
 
 
 def recv_exact(sock: socket.socket, n: int) -> bytes:
@@ -267,7 +292,7 @@ class Session:
             reply = r.json()["choices"][0]["message"]["content"].strip()
         self.history.append({"role": "user", "content": "[audio input]"})
         self.history.append({"role": "assistant", "content": reply})
-        self.history = self.history[-12:]
+        self.history = self.history[-_HISTORY_WINDOW:]
         return reply
 
     def process_utterance(self, pcm16: bytes):
