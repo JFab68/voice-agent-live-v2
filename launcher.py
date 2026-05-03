@@ -4,12 +4,11 @@
 import os
 import subprocess
 import threading
-import time
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-START_SCRIPT = os.path.join(SCRIPT_DIR, "start-daemons.sh")
+START_SCRIPT = os.path.join(SCRIPT_DIR, "start-daemons.py")
 STOP_SCRIPT = os.path.join(SCRIPT_DIR, "stop-voice-agent.sh")
 
 LLAMA_PORT = 8099
@@ -29,7 +28,7 @@ class VoiceAgentLauncher(tk.Tk):
         y = (self.winfo_screenheight() - 280) // 2
         self.geometry(f"380x280+{x}+{y}")
 
-        # Colors
+        # Colors (Catppuccin Mocha)
         self.GREEN = "#22c55e"
         self.RED = "#ef4444"
         self.AMBER = "#f59e0b"
@@ -39,41 +38,37 @@ class VoiceAgentLauncher(tk.Tk):
 
         self.configure(bg=self.DARK)
         self._running = False
-        self._call_active = False
 
         self._build_ui()
         self.after(200, self._refresh_status)
 
     def _build_ui(self):
         # Header
-        hdr = tk.Frame(self, bg=self.DARK)
-        hdr.pack(fill="x", pady=(12, 4))
-
         tk.Label(
-            hdr, text="Praxis Voice Agent",
+            self, text="Praxis Voice Agent",
             font=("Segoe UI", 16, "bold"),
             bg=self.DARK, fg=self.TEXT
-        ).pack()
+        ).pack(pady=(12, 0))
 
         tk.Label(
-            hdr, text="Gemma 4 E4B  •  AudioSocket  •  Baresip",
+            self, text="Gemma 4 E4B  •  AudioSocket  •  Baresip",
             font=("Segoe UI", 9),
             bg=self.DARK, fg="#6c7086"
-        ).pack()
+        ).pack(pady=(2, 8))
 
         # Status indicators frame
         status_frame = tk.Frame(self, bg=self.SURFACE)
-        status_frame.pack(fill="x", padx=16, pady=12)
+        status_frame.pack(fill="x", padx=16, pady=8)
 
         self.llama_label = tk.Label(
-            status_frame, text="⬤ llama-server (8099)",
+            status_frame, text="●  llama-server (:8099)",
             font=("Segoe UI", 10),
             bg=self.SURFACE, fg="#6c7086"
         )
         self.llama_label.pack(anchor="w", padx=12, pady=(8, 2))
 
         self.v2_label = tk.Label(
-            status_frame, text="⬤ AudioSocket  (9019)",
+            status_frame, text="●  AudioSocket  (:9019)",
             font=("Segoe UI", 10),
             bg=self.SURFACE, fg="#6c7086"
         )
@@ -98,12 +93,12 @@ class VoiceAgentLauncher(tk.Tk):
             bd=0, relief="flat",
             cursor="hand2",
             height=2,
-            command=self._toggle
+            command=self._toggle,
         )
         self.toggle_btn.pack(fill="x", ipady=6)
 
         self.call_btn = tk.Button(
-            btn_frame, text="📞  Call Agent",
+            btn_frame, text="Call Agent",
             font=("Segoe UI", 11),
             bg="#3b82f6", fg="white",
             activebackground="#3b82f6", activeforeground="white",
@@ -111,13 +106,13 @@ class VoiceAgentLauncher(tk.Tk):
             cursor="hand2",
             state="disabled",
             height=1,
-            command=self._call
+            command=self._call,
         )
         self.call_btn.pack(fill="x", ipady=4, pady=(8, 0))
 
         # Footer
         tk.Label(
-            self, text="click Start to launch servers  •  click Call to open softphone",
+            self, text="Start = launch servers  |  Call = open softphone + dial",
             font=("Segoe UI", 8),
             bg=self.DARK, fg="#45475a"
         ).pack(side="bottom", pady=(0, 8))
@@ -129,7 +124,7 @@ class VoiceAgentLauncher(tk.Tk):
         try:
             r = subprocess.run(
                 ["curl", "-sf", f"http://127.0.0.1:{LLAMA_PORT}/health"],
-                capture_output=True, timeout=2
+                capture_output=True, timeout=3,
             )
             llama = r.returncode == 0
         except Exception:
@@ -137,7 +132,7 @@ class VoiceAgentLauncher(tk.Tk):
         try:
             r = subprocess.run(
                 ["ss", "-tlnp"],
-                capture_output=True, text=True, timeout=2
+                capture_output=True, text=True, timeout=3,
             )
             v2 = f":{V2_PORT} " in r.stdout
         except Exception:
@@ -170,7 +165,6 @@ class VoiceAgentLauncher(tk.Tk):
             )
             self.call_btn.configure(state="disabled")
 
-        # Schedule next check
         self.after(1500, self._refresh_status)
 
     def _toggle(self):
@@ -186,22 +180,24 @@ class VoiceAgentLauncher(tk.Tk):
         def run():
             try:
                 result = subprocess.run(
-                    ["bash", START_SCRIPT],
-                    capture_output=True, text=True, timeout=60
+                    ["python3", START_SCRIPT],
+                    capture_output=True, text=True, timeout=60,
                 )
             except Exception as e:
                 self.after(0, lambda: self._on_start_done(False, str(e)))
                 return
-            self.after(0, lambda: self._on_start_done(result.returncode == 0, result.stdout))
+            self.after(0, lambda: self._on_start_done(
+                result.returncode == 0, result.stdout
+            ))
 
         threading.Thread(target=run, daemon=True).start()
 
     def _on_start_done(self, ok, info):
         self.toggle_btn.configure(state="normal")
         if ok:
-            self.log_label.configure(text="Running ✓", fg=self.GREEN)
+            self.log_label.configure(text="Running", fg=self.GREEN)
         else:
-            self.log_label.configure(text="Failed ✗", fg=self.RED)
+            self.log_label.configure(text="Failed", fg=self.RED)
             messagebox.showerror("Error", "Failed to start servers:\n" + info)
 
     def _stop(self):
@@ -212,7 +208,7 @@ class VoiceAgentLauncher(tk.Tk):
             try:
                 subprocess.run(
                     ["bash", STOP_SCRIPT],
-                    capture_output=True, text=True, timeout=15
+                    capture_output=True, text=True, timeout=15,
                 )
             except Exception:
                 pass
@@ -227,19 +223,16 @@ class VoiceAgentLauncher(tk.Tk):
     def _call(self):
         """Open baresip and auto-dial testlive."""
         try:
-            subprocess.Popen(
-                ["gnome-terminal", "--", "baresip", "-e", "/dial testlive"],
-            )
+            subprocess.Popen(["gnome-terminal", "--", "baresip", "-e", "/dial testlive"])
         except Exception:
             try:
                 subprocess.Popen(["xterm", "-e", "baresip", "-e", "/dial testlive"])
             except Exception:
                 messagebox.showwarning(
                     "No terminal emulator found",
-                    "Install gnome-terminal or xterm, or run:\nbaresip -e '/dial testlive'"
+                    "Install gnome-terminal or xterm, or run:\nbaresip -e '/dial testlive'",
                 )
 
 
 if __name__ == "__main__":
-    launcher = VoiceAgentLauncher()
-    launcher.mainloop()
+    VoiceAgentLauncher().mainloop()
