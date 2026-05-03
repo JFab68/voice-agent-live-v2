@@ -215,18 +215,22 @@ class Launcher(tk.Tk):
 
     def _dial(self):
         """Open baresip with auto-dial."""
-        cmd = f"baresip -e '/dial {SIP_EXT}'"
+        # Use bash -c to avoid quoting headaches across terminal emulators
+        cmd = "baresip -e '/dial testlive'"
         # Try multiple terminal emulators
-        for term in [["gnome-terminal", "--"], ["xterm", "-e"], ["xfce4-terminal", "-e"]]:
+        for term_args in [
+            ["gnome-terminal", "--", "bash", "-c", f"{cmd}; exec bash"],
+            ["xterm", "-hold", "-e", "bash", "-c", cmd],
+            ["xfce4-terminal", "-e", f"bash -c '{cmd}; exec bash'"],
+        ]:
             try:
-                subprocess.Popen(term + [cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                break
+                subprocess.Popen(term_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return
             except FileNotFoundError:
                 continue
-        else:
-            import tkinter.messagebox as mb
-            mb.showinfo("Dial manually",
-                        f"Open a terminal and run:\n\n  {cmd}")
+        import tkinter.messagebox as mb
+        mb.showinfo("Dial manually",
+                    f"Open a terminal and run:\n\n  {cmd}")
 
 
 if __name__ == "__main__":
